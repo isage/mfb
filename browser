@@ -1,0 +1,122 @@
+#!/usr/bin/env perl
+use Mojolicious::Lite;
+use IO::Dir;
+use File::Stat::ModeString;
+use DateTime;
+use Number::Bytes::Human qw/format_bytes/;
+
+app->config(hypnotoad => {listen => ['http://*:11007']});
+
+get '/*path' => { path => ''} => sub {
+  my $self = shift;
+
+  my $basedir=$self->app->static->paths->[0];
+  my $path = '/'.$self->stash('path');
+
+  my @files;
+  my @dirs;
+
+  my $d = IO::Dir->new($basedir.$path);
+
+  if (defined $d)
+  {
+    while (defined($_ = $d->read))
+    {
+      next if ($_ eq '.');
+      next if ($_ eq '..' && $path eq '/');
+      push @dirs, $_ if (-d $basedir.$path.$_);
+    }
+    $d->rewind;
+    while (defined($_ = $d->read))
+    {
+      if (-f $basedir.$path.$_)
+      {
+        my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+               $atime,$mtime,$ctime,$blksize,$blocks)
+                          = stat($basedir.$path.$_);
+        my $file;
+        $file->{"name"} = $_;
+        $file->{"mode"} = mode_to_string($mode);
+        my $dt = DateTime->from_epoch( epoch => $mtime );
+        $file->{"time"} = $dt->hms." ".$dt->dmy;
+        $file->{"size"} = format_bytes($size);
+        push @files, $file;
+      }
+    }
+    undef $d;
+  }
+  else
+  {
+    return $self->render_not_found();
+  }
+  $self->render("index",msg => $path, files => \@files, dirs => \@dirs);
+};
+
+app->start;
+
+__DATA__
+
+@@ index.html.ep
+% layout 'default';
+% title $msg;
+
+<h2><%= $msg %></h2>
+<div class="row">
+  <div class="col-lg-12">
+    <table class="table">
+      <tr>
+        <th width="24px"></th>
+        <th>Name</th>
+        <th>Mode</th>
+        <th>Modified</th>
+        <th>Size</th>
+      </tr>
+
+% foreach my $file (@{$dirs}) {
+      <tr>
+        <td><span class="glyphicon glyphicon-folder-open"></span></td>
+        <td><a href="<%= $file %>/"><%= $file %></a></td>
+        <td></td>
+        <td></td>
+        <td>—</td>
+      </tr>
+% }
+
+% foreach my $file (@{$files}) {
+      <tr>
+        <td><span class="glyphicon glyphicon-file"></span></td>
+        <td><a href="<%= $file->{"name"} %>"><%= $file->{"name"} %></a></td>
+        <td><%= $file->{"mode"} %></td>
+        <td><%= $file->{"time"} %></td>
+        <td><%= $file->{"size"} %></td>
+      </tr>
+% }
+    </table>
+  </div>
+</div>
+
+
+@@ layouts/default.html.ep
+<!DOCTYPE html>
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+        <title><%= title %></title>
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width">
+        <link rel="stylesheet" href="/assets/css/bootstrap.min.css">
+        <style>
+            body {
+                padding-top: 50px;
+                padding-bottom: 20px;
+            }
+        </style>
+        <link rel="stylesheet" href="/assets/css/bootstrap-theme.min.css">
+    </head>
+    <body>
+      <div class="container">
+        <%= content %>
+      </div>
+    </body>
+</html>
+
